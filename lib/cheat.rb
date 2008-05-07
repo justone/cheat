@@ -1,12 +1,11 @@
 $:.unshift File.dirname(__FILE__)
-%w[rubygems tempfile fileutils net/http yaml open-uri wrap].each { |f| require f }
+%w[rubygems pp tempfile fileutils net/http yaml open-uri wrap].each { |f| require f }
 
 module Cheat
   extend self
 
-  HOST = ARGV.include?('debug') ? 'localhost' : 'cheat.errtheblog.com'
-  PORT = ARGV.include?('debug') ? 3001 : 80
-  SUFFIX = ''
+  @cheat_urls = ["http://cheat.endot.org:1337/", "http://localhost:8020/"]
+  #@cheat_urls = ["http://cheat.endot.org:1337/", "http://cheat.errtheblog.com/"]
 
   def sheets(args)
     args = args.dup
@@ -15,11 +14,13 @@ module Cheat
 
     FileUtils.mkdir(cache_dir) unless File.exists?(cache_dir) if cache_dir
 
-    uri = "http://#{cheat_uri}/y/"
+    uri = "y/"
 
     if %w[sheets all recent].include? @sheet
-      uri = uri.sub('/y/', @sheet == 'recent' ? '/yr/' : '/ya/')
-      return open(uri) { |body| show(body.read) } 
+      uri = uri.sub('y/', @sheet == 'recent' ? 'yr/' : 'ya/')
+      return @cheat_urls.each do |base_uri|
+        open(base_uri + uri) { |body| show(body.read) } 
+      end
     end
 
     return show(File.read(cache_file)) if File.exists?(cache_file) rescue clear_cache if cache_file 
@@ -28,14 +29,23 @@ module Cheat
   end
 
   def fetch_sheet(uri, try_to_cache = true)
-    open(uri, headers) do |body|
-      sheet = body.read
-      File.open(cache_file, 'w') { |f| f.write(sheet) } if try_to_cache && cache_file && !@edit 
-      @edit ? edit(sheet) : show(sheet)
-    end 
-    exit
-  rescue OpenURI::HTTPError => e
-    puts "Whoa, some kind of Internets error!", "=> #{e} from #{uri}"
+    @cheat_urls.each do |base_uri|
+      @current_base_uri = base_uri
+      #puts base_uri + uri
+      begin
+        open(base_uri + uri, headers) do |body|
+          sheet = body.read
+          next if sheet =~ /not found/
+          File.open(cache_file, 'w') { |f| f.write(sheet) } if try_to_cache && cache_file && !@edit 
+          @edit ? edit(sheet) : show(sheet)
+          return
+        end 
+      rescue Exception => e
+        puts "Whoa, some kind of Internets error!", "=> #{e} from #{base_uri + uri}"
+      end
+    end
+
+    puts "Hm... a cheat sheet for '#{@sheet}' doesn't seem to exist.  Care to share?"
   end
 
   def parse_args(args)
@@ -62,7 +72,7 @@ module Cheat
 
   # $ cheat greader --versions
   def show_versions(sheet)
-    fetch_sheet("http://#{cheat_uri}/h/#{sheet}/", false)
+    fetch_sheet("h/#{sheet}/", false)
   end
 
   # $ cheat greader --diff 1[:3]
@@ -70,7 +80,7 @@ module Cheat
     return unless version =~ /^(\d+)(:(\d+))?$/
     old_version, new_version = $1, $3
 
-    uri = "http://#{cheat_uri}/d/#{sheet}/#{old_version}"
+    uri = "d/#{sheet}/#{old_version}"
     uri += "/#{new_version}" if new_version
 
     fetch_sheet(uri, false) 
@@ -84,12 +94,9 @@ module Cheat
     { 'User-Agent' => 'cheat!', 'Accept' => 'text/yaml' } 
   end
 
-  def cheat_uri
-    "#{HOST}:#{PORT}#{SUFFIX}"
-  end
-
   def show(sheet_yaml)
     sheet = YAML.load(sheet_yaml).to_a.first
+    #pp sheet
     sheet[-1] = sheet.last.join("\n") if sheet[-1].is_a?(Array)
     run_pager
     puts sheet.first + ':'
@@ -111,12 +118,14 @@ module Cheat
 
   def add(title)
     body = write_to_tempfile(title)
+    @current_base_uri = @cheat_urls.first # TODO: figure out which host to write to
     res = post_sheet(title, body, true)
     check_errors(res, title, body)
   end
 
   def post_sheet(title, body, new = false)
-    uri = "http://#{cheat_uri}/w/"
+    uri = "#{@current_base_uri}w/"
+    puts uri
     uri += title unless new
     Net::HTTP.post_form(URI.parse(uri), "sheet_title" => title, "sheet_body" => body.strip, "from_gem" => true)
   end
