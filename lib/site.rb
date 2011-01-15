@@ -600,9 +600,9 @@ if __FILE__ == $0
     abort "** Try running `camping #$0' instead."
   end
 
-  Cheat::Models::Base.establish_connection :adapter => 'mysql', :user => 'root', :database => 'camping', :host => 'localhost'
+  Cheat::Models::Base.establish_connection :adapter => 'sqlite3', :database => 'database.db'
   Cheat::Models::Base.logger = nil
-  Cheat::Models::Base.threaded_connections = false
+  Cheat::Models::Base.allow_concurrency = false
   Cheat.create
 
   server = Mongrel::Camping.start("0.0.0.0", 8020, "/", Cheat)

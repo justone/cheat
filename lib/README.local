@@ -1,0 +1,4 @@
+to run server, copy site.local to site.rb
+ruby -I ambition/lib/  site.rb
+modify cheat.rb to change hostnames
+./cheat perlre
